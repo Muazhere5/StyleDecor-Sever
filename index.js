@@ -36,3 +36,42 @@ async function connectDB() {
   }
 }
 connectDB();
+
+/* ============================
+   COLLECTIONS
+============================ */
+const usersCol = () => db.collection("users");
+const decoratorsCol = () => db.collection("decorators");
+const servicesCol = () => db.collection("services");
+const bookingsCol = () => db.collection("bookings");
+const paymentsCol = () => db.collection("payments");
+const trackingCol = () => db.collection("trackings");
+
+
+/* ============================
+   JWT MIDDLEWARE
+============================ */
+const verifyJWT = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).send({ message: "Unauthorized" });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).send({ message: "Forbidden" });
+    }
+    req.user = decoded;
+    next();
+  });
+};
+
+const verifyRole = role => async (req, res, next) => {
+  const user = await usersCol().findOne({ email: req.user.email });
+  if (!user || user.role !== role) {
+    return res.status(403).send({ message: "Access denied" });
+  }
+  next();
+};
