@@ -273,3 +273,40 @@ app.post("/payments", verifyJWT, async (req, res) => {
 
   res.send({ message: "Payment successful" });
 });
+
+/* ============================
+   DECORATOR DASHBOARD
+============================ */
+app.get(
+  "/decorator/tasks",
+  verifyJWT,
+  verifyRole("decorator"),
+  async (req, res) => {
+    const tasks = await bookingsCol()
+      .find({ decoratorEmail: req.user.email })
+      .toArray();
+    res.send(tasks);
+  }
+);
+
+app.patch(
+  "/decorator/update-status/:id",
+  verifyJWT,
+  verifyRole("decorator"),
+  async (req, res) => {
+    const { status } = req.body;
+
+    await bookingsCol().updateOne(
+      { _id: new ObjectId(req.params.id) },
+      { $set: { status } }
+    );
+
+    await trackingCol().insertOne({
+      bookingId: req.params.id,
+      status,
+      date: new Date(),
+    });
+
+    res.send({ message: "Status updated" });
+  }
+);
