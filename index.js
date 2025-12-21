@@ -310,3 +310,13 @@ app.patch(
     res.send({ message: "Status updated" });
   }
 );
+
+/* ============================
+   TRACKING
+============================ */
+app.get("/tracking/:id", async (req, res) => {
+  const tracking = await trackingCol()
+    .find({ bookingId: req.params.id })
+    .toArray();
+  res.send(tracking);
+});
