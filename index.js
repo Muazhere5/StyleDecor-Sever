@@ -232,4 +232,44 @@ app.patch(
 
     res.send({ message: "Decorator assigned" });
   }
-);
+); 
+
+/* ============================
+   STRIPE PAYMENT
+============================ */
+app.post("/create-payment-intent", verifyJWT, async (req, res) => {
+  const { price } = req.body;
+
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount: price * 100,
+    currency: "bdt",
+    payment_method_types: ["card"],
+  });
+
+  res.send({ clientSecret: paymentIntent.client_secret });
+});
+
+app.post("/payments", verifyJWT, async (req, res) => {
+  const payment = req.body;
+  payment.date = new Date();
+
+  await paymentsCol().insertOne(payment);
+
+  await bookingsCol().updateOne(
+    { _id: new ObjectId(payment.bookingId) },
+    {
+      $set: {
+        status: "paid",
+        trackingNo: Math.floor(100000 + Math.random() * 900000),
+      },
+    }
+  );
+
+  await trackingCol().insertOne({
+    bookingId: payment.bookingId,
+    status: "Payment Completed",
+    date: new Date(),
+  });
+
+  res.send({ message: "Payment successful" });
+});
