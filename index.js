@@ -202,3 +202,34 @@ app.get("/bookings/admin", verifyJWT, verifyRole("admin"), async (req, res) => {
   const bookings = await bookingsCol().find().toArray();
   res.send(bookings);
 });
+
+
+/* ============================
+   ASSIGN DECORATOR (ADMIN)
+============================ */
+app.patch(
+  "/bookings/assign/:id",
+  verifyJWT,
+  verifyRole("admin"),
+  async (req, res) => {
+    const { decoratorEmail } = req.body;
+
+    await bookingsCol().updateOne(
+      { _id: new ObjectId(req.params.id) },
+      {
+        $set: {
+          decoratorEmail,
+          status: "assigned",
+        },
+      }
+    );
+
+    await trackingCol().insertOne({
+      bookingId: req.params.id,
+      status: "Decorator Assigned",
+      date: new Date(),
+    });
+
+    res.send({ message: "Decorator assigned" });
+  }
+);
