@@ -185,7 +185,9 @@ app.post("/bookings", verifyJWT, async (req, res) => {
   const booking = req.body;
 
   booking.userEmail = req.user.email;
-  booking.status = "unpaid";
+  booking.status = "pending";
+  booking.paymentStatus = "unpaid";
+
   booking.createdAt = new Date();
 
   const result = await bookingsCol().insertOne(booking);
