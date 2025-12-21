@@ -114,4 +114,47 @@ app.patch("/users/make-admin/:id", verifyJWT, verifyRole("admin"), async (req, r
     { $set: { role: "admin" } }
   );
   res.send({ message: "User promoted to admin" });
+}); 
+
+
+/* ============================
+   DECORATOR MANAGEMENT
+============================ */
+app.post("/decorators/apply", verifyJWT, async (req, res) => {
+  const data = req.body;
+  data.status = "pending";
+  data.createdAt = new Date();
+
+  await decoratorsCol().insertOne(data);
+  res.send({ message: "Decorator application submitted" });
 });
+
+app.get("/decorators", async (req, res) => {
+  const decorators = await decoratorsCol()
+    .find({ status: "approved" })
+    .toArray();
+  res.send(decorators);
+});
+
+app.patch(
+  "/decorators/approve/:id",
+  verifyJWT,
+  verifyRole("admin"),
+  async (req, res) => {
+    const decorator = await decoratorsCol().findOne({
+      _id: new ObjectId(req.params.id),
+    });
+
+    await decoratorsCol().updateOne(
+      { _id: decorator._id },
+      { $set: { status: "approved" } }
+    );
+
+    await usersCol().updateOne(
+      { email: decorator.email },
+      { $set: { role: "decorator" } }
+    );
+
+    res.send({ message: "Decorator approved" });
+  }
+);
