@@ -175,3 +175,30 @@ app.get("/services", async (req, res) => {
   const services = await servicesCol().find().toArray();
   res.send(services);
 });
+
+
+/* ============================
+   BOOKINGS (USER)
+============================ */
+app.post("/bookings", verifyJWT, async (req, res) => {
+  const booking = req.body;
+
+  booking.userEmail = req.user.email;
+  booking.status = "unpaid";
+  booking.createdAt = new Date();
+
+  const result = await bookingsCol().insertOne(booking);
+  res.send(result);
+});
+
+app.get("/bookings/user", verifyJWT, async (req, res) => {
+  const bookings = await bookingsCol()
+    .find({ userEmail: req.user.email })
+    .toArray();
+  res.send(bookings);
+});
+
+app.get("/bookings/admin", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const bookings = await bookingsCol().find().toArray();
+  res.send(bookings);
+});
