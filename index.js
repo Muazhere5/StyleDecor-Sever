@@ -75,3 +75,43 @@ const verifyRole = role => async (req, res, next) => {
   }
   next();
 };
+
+
+/* ============================
+   AUTH & USERS
+============================ */
+app.post("/jwt", async (req, res) => {
+  const user = req.body;
+  const token = jwt.sign(user, process.env.JWT_SECRET, {
+    expiresIn: "7d",
+  });
+  res.send({ token });
+});
+
+app.post("/users", async (req, res) => {
+  const user = req.body;
+  const exists = await usersCol().findOne({ email: user.email });
+
+  if (exists) {
+    return res.send({ message: "User already exists" });
+  }
+
+  user.role = "user";
+  user.createdAt = new Date();
+
+  await usersCol().insertOne(user);
+  res.send({ message: "User created successfully" });
+});
+
+app.get("/users", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const users = await usersCol().find().toArray();
+  res.send(users);
+});
+
+app.patch("/users/make-admin/:id", verifyJWT, verifyRole("admin"), async (req, res) => {
+  await usersCol().updateOne(
+    { _id: new ObjectId(req.params.id) },
+    { $set: { role: "admin" } }
+  );
+  res.send({ message: "User promoted to admin" });
+});
