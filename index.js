@@ -157,4 +157,21 @@ app.patch(
 
     res.send({ message: "Decorator approved" });
   }
-);
+); 
+
+/* ============================
+   SERVICES (ADMIN CRUD)
+============================ */
+app.post("/services", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const service = req.body;
+  service.createdBy = req.user.email;
+  service.createdAt = new Date();
+
+  await servicesCol().insertOne(service);
+  res.send({ message: "Service created" });
+});
+
+app.get("/services", async (req, res) => {
+  const services = await servicesCol().find().toArray();
+  res.send(services);
+});
