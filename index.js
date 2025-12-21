@@ -320,3 +320,14 @@ app.get("/tracking/:id", async (req, res) => {
     .toArray();
   res.send(tracking);
 });
+
+/* ============================
+   SERVER START
+============================ */
+app.get("/", (req, res) => {
+  res.send("🎨 StyleDecor Server is running");
+});
+
+app.listen(process.env.PORT, () => {
+  console.log(`🚀 StyleDecor Server running on port ${process.env.PORT}`);
+});
