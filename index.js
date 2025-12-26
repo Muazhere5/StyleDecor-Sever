@@ -130,7 +130,7 @@ app.get("/bookings/user", verifyJWT, async (req, res) => {
 });
 
 /* ============================
-   PAYMENTS (✅ FIXED)
+   PAYMENTS (CREATE)
 ============================ */
 app.post("/payments", verifyJWT, async (req, res) => {
   try {
@@ -152,12 +152,10 @@ app.post("/payments", verifyJWT, async (req, res) => {
       return res.status(404).send({ message: "Booking not found" });
     }
 
-    // Prevent double payment
     if (booking.paymentStatus === "paid") {
       return res.status(400).send({ message: "Already paid" });
     }
 
-    // Save payment
     await payments.insertOne({
       bookingId: booking._id,
       amount,
@@ -165,13 +163,11 @@ app.post("/payments", verifyJWT, async (req, res) => {
       createdAt: new Date(),
     });
 
-    // Update booking
     await bookings.updateOne(
       { _id: booking._id },
       { $set: { paymentStatus: "paid" } }
     );
 
-    // Tracking
     await trackings.insertOne({
       bookingId: booking._id,
       userEmail: req.user.email,
@@ -183,6 +179,43 @@ app.post("/payments", verifyJWT, async (req, res) => {
   } catch (error) {
     console.error("Payment Error:", error);
     res.status(500).send({ message: "Payment failed" });
+  }
+});
+
+/* ============================
+   PAYMENT HISTORY (✅ FIXED)
+============================ */
+app.get("/payments", verifyJWT, async (req, res) => {
+  try {
+    const payments = await paymentsCol();
+    const bookings = await bookingsCol();
+
+    const userPayments = await payments
+      .find({ userEmail: req.user.email })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    const enrichedPayments = await Promise.all(
+      userPayments.map(async payment => {
+        const booking = await bookings.findOne({
+          _id: new ObjectId(payment.bookingId),
+        });
+
+        return {
+          _id: payment._id,
+          amount: payment.amount,
+          createdAt: payment.createdAt,
+          serviceType: booking?.serviceType || "N/A",
+          trackingId: booking?._id || "N/A",
+          transactionId: payment._id,
+        };
+      })
+    );
+
+    res.send(enrichedPayments);
+  } catch (error) {
+    console.error("Payment history error:", error);
+    res.status(500).send({ message: "Failed to load payment history" });
   }
 });
 
