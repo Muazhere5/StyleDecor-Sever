@@ -10,27 +10,21 @@ const admin = require("firebase-admin");
 let stripe = null;
 if (process.env.STRIPE_SECRET) {
   stripe = require("stripe")(process.env.STRIPE_SECRET);
-} else {
-  console.warn("⚠️ STRIPE_SECRET is missing");
 }
 
 /* ============================
    FIREBASE ADMIN INIT
 ============================ */
 if (!admin.apps.length) {
-  try {
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY
-          ?.replace(/\\n/g, "\n")
-          ?.replace(/"/g, ""),
-      }),
-    });
-  } catch (err) {
-    console.error("🔥 Firebase Admin Init Failed:", err);
-  }
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY
+        ?.replace(/\\n/g, "\n")
+        ?.replace(/"/g, ""),
+    }),
+  });
 }
 
 /* ============================
@@ -52,16 +46,12 @@ app.use(
 app.use(express.json());
 
 /* ============================
-   DATABASE CONNECTION
+   DATABASE
 ============================ */
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB_CLUSTER}/${process.env.DB_NAME}?retryWrites=true&w=majority`;
 
 const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  },
+  serverApi: { version: ServerApiVersion.v1 },
 });
 
 let db;
@@ -84,72 +74,52 @@ const paymentsCol = async () => (await getDB()).collection("payments");
 const servicesCol = async () => (await getDB()).collection("services");
 
 /* ============================
-   AUTH MIDDLEWARE
+   AUTH
 ============================ */
 const verifyJWT = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
+  if (!authHeader?.startsWith("Bearer "))
     return res.status(401).send({ message: "Unauthorized" });
-  }
 
   try {
     const token = authHeader.split(" ")[1];
     req.user = await admin.auth().verifyIdToken(token);
     next();
   } catch {
-    return res.status(403).send({ message: "Forbidden" });
+    res.status(403).send({ message: "Forbidden" });
   }
 };
 
 const verifyRole = role => async (req, res, next) => {
-  try {
-    const users = await usersCol();
-    const user = await users.findOne({ email: req.user.email });
-    if (!user || user.role !== role)
-      return res.status(403).send({ message: "Access denied" });
-    next();
-  } catch {
-    res.status(500).send({ message: "Server error" });
-  }
+  const users = await usersCol();
+  const user = await users.findOne({ email: req.user.email });
+
+  if (!user || user.role !== role)
+    return res.status(403).send({ message: "Access denied" });
+
+  next();
 };
 
 /* ============================
    ROUTES
 ============================ */
+
 app.get("/", (req, res) => {
   res.send("🎨 StyleDecor Server is running");
 });
 
-/* ---------- USERS ---------- */
-app.post("/users", async (req, res) => {
-  const users = await usersCol();
-  const exists = await users.findOne({ email: req.body.email });
-
-  if (exists) return res.send({ message: "User already exists" });
-
-  await users.insertOne({
-    ...req.body,
-    role: "user",
-    createdAt: new Date(),
-  });
-
-  res.send({ message: "User created successfully" });
-});
-
-app.get("/users/role", verifyJWT, async (req, res) => {
-  const users = await usersCol();
-  const user = await users.findOne({ email: req.user.email });
-  res.send({ role: user?.role || "user" });
-});
-
-/* ---------- BOOKINGS ---------- */
+/* ============================
+   BOOKINGS
+============================ */
 app.post("/bookings", verifyJWT, async (req, res) => {
   const bookings = await bookingsCol();
+
   await bookings.insertOne({
     ...req.body,
     paymentStatus: "unpaid",
     createdAt: new Date(),
   });
+
   res.send({ success: true });
 });
 
@@ -159,25 +129,20 @@ app.get("/bookings/user", verifyJWT, async (req, res) => {
   res.send(result);
 });
 
-/* ---------- PAYMENTS (FIXED) ---------- */
+/* ============================
+   PAYMENTS (✅ FIXED)
+============================ */
 app.post("/payments", verifyJWT, async (req, res) => {
   try {
-    const {
-      bookingId,
-      amount,
-      transactionId,
-      trackingId,
-      email,
-      serviceType,
-      region,
-    } = req.body;
+    const { bookingId, amount } = req.body;
 
     if (!bookingId || !amount) {
-      return res.status(400).send({ message: "Invalid payment data" });
+      return res.status(400).send({ message: "Missing payment data" });
     }
 
     const bookings = await bookingsCol();
     const payments = await paymentsCol();
+    const trackings = await trackingsCol();
 
     const booking = await bookings.findOne({
       _id: new ObjectId(bookingId),
@@ -187,41 +152,41 @@ app.post("/payments", verifyJWT, async (req, res) => {
       return res.status(404).send({ message: "Booking not found" });
     }
 
+    // Prevent double payment
+    if (booking.paymentStatus === "paid") {
+      return res.status(400).send({ message: "Already paid" });
+    }
+
     // Save payment
     await payments.insertOne({
-      bookingId: new ObjectId(bookingId),
+      bookingId: booking._id,
       amount,
-      transactionId,
-      trackingId,
-      email,
-      serviceType,
-      region,
-      status: "paid",
+      userEmail: req.user.email,
       createdAt: new Date(),
     });
 
-    // Update booking payment status
+    // Update booking
     await bookings.updateOne(
-      { _id: new ObjectId(bookingId) },
+      { _id: booking._id },
       { $set: { paymentStatus: "paid" } }
     );
 
     // Tracking
-    await trackingsCol().insertOne({
-      bookingId,
-      email,
+    await trackings.insertOne({
+      bookingId: booking._id,
+      userEmail: req.user.email,
       status: "Completed",
       createdAt: new Date(),
     });
 
     res.send({ success: true });
   } catch (error) {
-    console.error("❌ PAYMENT ERROR:", error);
+    console.error("Payment Error:", error);
     res.status(500).send({ message: "Payment failed" });
   }
 });
 
 /* ============================
-   EXPORT FOR VERCEL
+   EXPORT
 ============================ */
 module.exports = app;
