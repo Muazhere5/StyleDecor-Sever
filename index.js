@@ -5,7 +5,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
 
 /* ============================
-   SAFE STRIPE INIT
+   STRIPE (SAFE)
 ============================ */
 let stripe = null;
 if (process.env.STRIPE_SECRET) {
@@ -13,7 +13,7 @@ if (process.env.STRIPE_SECRET) {
 }
 
 /* ============================
-   FIREBASE ADMIN INIT
+   FIREBASE ADMIN
 ============================ */
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -28,7 +28,7 @@ if (!admin.apps.length) {
 }
 
 /* ============================
-   APP CONFIG
+   APP SETUP
 ============================ */
 const app = express();
 
@@ -74,7 +74,7 @@ const paymentsCol = async () => (await getDB()).collection("payments");
 const servicesCol = async () => (await getDB()).collection("services");
 
 /* ============================
-   AUTH
+   AUTH MIDDLEWARE
 ============================ */
 const verifyJWT = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -94,18 +94,67 @@ const verifyRole = role => async (req, res, next) => {
   const users = await usersCol();
   const user = await users.findOne({ email: req.user.email });
 
-  if (!user || user.role !== role)
+  if (!user || user.role !== role) {
     return res.status(403).send({ message: "Access denied" });
+  }
 
   next();
 };
 
 /* ============================
-   ROUTES
+   ROOT
 ============================ */
-
 app.get("/", (req, res) => {
   res.send("🎨 StyleDecor Server is running");
+});
+
+/* ============================
+   🔥 ROLE CHECK (FIXED)
+============================ */
+app.get("/users/role", verifyJWT, async (req, res) => {
+  try {
+    const users = await usersCol();
+    const user = await users.findOne({ email: req.user.email });
+
+    res.send({ role: user?.role || "user" });
+  } catch (err) {
+    res.status(500).send({ role: "user" });
+  }
+});
+
+/* ============================
+   USERS (ADMIN)
+============================ */
+app.get("/users", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const users = await usersCol();
+  res.send(await users.find().toArray());
+});
+
+app.patch("/users/make-admin/:id", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const users = await usersCol();
+  await users.updateOne(
+    { _id: new ObjectId(req.params.id) },
+    { $set: { role: "admin" } }
+  );
+  res.send({ message: "User promoted to admin" });
+});
+
+app.patch("/users/block/:id", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const users = await usersCol();
+  const user = await users.findOne({ _id: new ObjectId(req.params.id) });
+
+  await users.updateOne(
+    { _id: new ObjectId(req.params.id) },
+    { $set: { blocked: !user.blocked } }
+  );
+
+  res.send({ message: "Status updated" });
+});
+
+app.delete("/users/:id", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const users = await usersCol();
+  await users.deleteOne({ _id: new ObjectId(req.params.id) });
+  res.send({ message: "User deleted" });
 });
 
 /* ============================
@@ -113,110 +162,74 @@ app.get("/", (req, res) => {
 ============================ */
 app.post("/bookings", verifyJWT, async (req, res) => {
   const bookings = await bookingsCol();
-
   await bookings.insertOne({
     ...req.body,
     paymentStatus: "unpaid",
+    createdAt: new Date(),
+  });
+  res.send({ success: true });
+});
+
+app.get("/bookings/user", verifyJWT, async (req, res) => {
+  const bookings = await bookingsCol();
+  res.send(await bookings.find({ userEmail: req.user.email }).toArray());
+});
+
+/* ============================
+   PAYMENTS
+============================ */
+app.post("/payments", verifyJWT, async (req, res) => {
+  const { bookingId, amount } = req.body;
+
+  const bookings = await bookingsCol();
+  const payments = await paymentsCol();
+  const trackings = await trackingsCol();
+
+  const booking = await bookings.findOne({ _id: new ObjectId(bookingId) });
+  if (!booking) return res.status(404).send({ message: "Booking not found" });
+
+  await payments.insertOne({
+    bookingId,
+    amount,
+    userEmail: req.user.email,
+    createdAt: new Date(),
+  });
+
+  await bookings.updateOne(
+    { _id: booking._id },
+    { $set: { paymentStatus: "paid" } }
+  );
+
+  await trackings.insertOne({
+    bookingId,
+    userEmail: req.user.email,
+    status: "Completed",
     createdAt: new Date(),
   });
 
   res.send({ success: true });
 });
 
-app.get("/bookings/user", verifyJWT, async (req, res) => {
-  const bookings = await bookingsCol();
-  const result = await bookings.find({ userEmail: req.user.email }).toArray();
-  res.send(result);
-});
-
-/* ============================
-   PAYMENTS (CREATE)
-============================ */
-app.post("/payments", verifyJWT, async (req, res) => {
-  try {
-    const { bookingId, amount } = req.body;
-
-    if (!bookingId || !amount) {
-      return res.status(400).send({ message: "Missing payment data" });
-    }
-
-    const bookings = await bookingsCol();
-    const payments = await paymentsCol();
-    const trackings = await trackingsCol();
-
-    const booking = await bookings.findOne({
-      _id: new ObjectId(bookingId),
-    });
-
-    if (!booking) {
-      return res.status(404).send({ message: "Booking not found" });
-    }
-
-    if (booking.paymentStatus === "paid") {
-      return res.status(400).send({ message: "Already paid" });
-    }
-
-    await payments.insertOne({
-      bookingId: booking._id,
-      amount,
-      userEmail: req.user.email,
-      createdAt: new Date(),
-    });
-
-    await bookings.updateOne(
-      { _id: booking._id },
-      { $set: { paymentStatus: "paid" } }
-    );
-
-    await trackings.insertOne({
-      bookingId: booking._id,
-      userEmail: req.user.email,
-      status: "Completed",
-      createdAt: new Date(),
-    });
-
-    res.send({ success: true });
-  } catch (error) {
-    console.error("Payment Error:", error);
-    res.status(500).send({ message: "Payment failed" });
-  }
-});
-
-/* ============================
-   PAYMENT HISTORY (✅ FIXED)
-============================ */
 app.get("/payments", verifyJWT, async (req, res) => {
-  try {
-    const payments = await paymentsCol();
-    const bookings = await bookingsCol();
+  const payments = await paymentsCol();
+  const bookings = await bookingsCol();
 
-    const userPayments = await payments
-      .find({ userEmail: req.user.email })
-      .sort({ createdAt: -1 })
-      .toArray();
+  const data = await payments
+    .find({ userEmail: req.user.email })
+    .sort({ createdAt: -1 })
+    .toArray();
 
-    const enrichedPayments = await Promise.all(
-      userPayments.map(async payment => {
-        const booking = await bookings.findOne({
-          _id: new ObjectId(payment.bookingId),
-        });
+  const result = await Promise.all(
+    data.map(async p => {
+      const booking = await bookings.findOne({ _id: new ObjectId(p.bookingId) });
+      return {
+        ...p,
+        serviceType: booking?.serviceType,
+      };
+    })
+  );
 
-        return {
-          _id: payment._id,
-          amount: payment.amount,
-          createdAt: payment.createdAt,
-          serviceType: booking?.serviceType || "N/A",
-          trackingId: booking?._id || "N/A",
-          transactionId: payment._id,
-        };
-      })
-    );
-
-    res.send(enrichedPayments);
-  } catch (error) {
-    console.error("Payment history error:", error);
-    res.status(500).send({ message: "Failed to load payment history" });
-  }
+  res.send(result);
 });
 
 /* ============================
