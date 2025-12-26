@@ -1,7 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
 
 /* ============================
@@ -15,7 +15,7 @@ if (process.env.STRIPE_SECRET) {
 }
 
 /* ============================
-   FIREBASE ADMIN INIT (SAFE)
+   FIREBASE ADMIN INIT
 ============================ */
 if (!admin.apps.length) {
   try {
@@ -74,9 +74,14 @@ async function getDB() {
 }
 
 /* ============================
-   COLLECTION HELPERS
+   COLLECTIONS
 ============================ */
 const usersCol = async () => (await getDB()).collection("users");
+const bookingsCol = async () => (await getDB()).collection("bookings");
+const decoratorsCol = async () => (await getDB()).collection("decorators");
+const trackingsCol = async () => (await getDB()).collection("trackings");
+const paymentsCol = async () => (await getDB()).collection("payments");
+const servicesCol = async () => (await getDB()).collection("services"); // ✅ ADDED
 
 /* ============================
    AUTH MIDDLEWARE
@@ -92,8 +97,7 @@ const verifyJWT = async (req, res, next) => {
     req.user = await admin.auth().verifyIdToken(token);
     next();
   } catch (err) {
-    console.error("JWT Error:", err);
-    res.status(403).send({ message: "Forbidden" });
+    return res.status(403).send({ message: "Forbidden" });
   }
 };
 
@@ -101,12 +105,10 @@ const verifyRole = role => async (req, res, next) => {
   try {
     const users = await usersCol();
     const user = await users.findOne({ email: req.user.email });
-
-    if (!user || user.role !== role) {
+    if (!user || user.role !== role)
       return res.status(403).send({ message: "Access denied" });
-    }
     next();
-  } catch (err) {
+  } catch {
     res.status(500).send({ message: "Server error" });
   }
 };
@@ -118,35 +120,109 @@ app.get("/", (req, res) => {
   res.send("🎨 StyleDecor Server is running");
 });
 
+/* ---------- USERS ---------- */
 app.post("/users", async (req, res) => {
-  try {
-    const users = await usersCol();
-    const exists = await users.findOne({ email: req.body.email });
+  const users = await usersCol();
+  const exists = await users.findOne({ email: req.body.email });
 
-    if (exists) return res.send({ message: "User already exists" });
+  if (exists) return res.send({ message: "User already exists" });
 
-    await users.insertOne({
-      ...req.body,
-      role: "user",
-      createdAt: new Date(),
-    });
+  await users.insertOne({
+    ...req.body,
+    role: "user",
+    createdAt: new Date(),
+  });
 
-    res.send({ message: "User created successfully" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).send({ message: "Server error" });
-  }
+  res.send({ message: "User created successfully" });
 });
 
 app.get("/users/role", verifyJWT, async (req, res) => {
-  try {
-    const users = await usersCol();
-    const user = await users.findOne({ email: req.user.email });
+  const users = await usersCol();
+  const user = await users.findOne({ email: req.user.email });
+  res.send({ role: user?.role || "user" });
+});
 
-    res.send({ role: user?.role || "user" });
-  } catch (err) {
-    res.status(500).send({ role: "user" });
-  }
+/* ---------- BOOKINGS ---------- */
+app.post("/bookings", verifyJWT, async (req, res) => {
+  const bookings = await bookingsCol();
+  await bookings.insertOne(req.body);
+  res.send({ success: true });
+});
+
+app.get("/bookings/user", verifyJWT, async (req, res) => {
+  const bookings = await bookingsCol();
+  const result = await bookings.find({ userEmail: req.user.email }).toArray();
+  res.send(result);
+});
+
+/* ---------- DECORATORS ---------- */
+app.post("/decorators/apply", verifyJWT, async (req, res) => {
+  const decorators = await decoratorsCol();
+  await decorators.insertOne({
+    ...req.body,
+    status: "pending",
+    createdAt: new Date(),
+  });
+  res.send({ success: true });
+});
+
+app.get("/decorators", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const decorators = await decoratorsCol();
+  res.send(await decorators.find().toArray());
+});
+
+app.get("/decorators/pending", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const decorators = await decoratorsCol();
+  res.send(await decorators.find({ status: "pending" }).toArray());
+});
+
+/* ---------- SERVICES (NEW) ---------- */
+app.post("/services", verifyJWT, async (req, res) => {
+  const services = await servicesCol();
+
+  await services.insertOne({
+    ...req.body,
+    createdBy: req.user.email,
+    createdAt: new Date(),
+  });
+
+  res.send({ success: true });
+});
+
+app.get("/services", verifyJWT, async (req, res) => {
+  const services = await servicesCol();
+  const result = await services.find().toArray();
+  res.send(result);
+});
+
+app.get("/services/user", verifyJWT, async (req, res) => {
+  const services = await servicesCol();
+  const result = await services
+    .find({ createdBy: req.user.email })
+    .toArray();
+  res.send(result);
+});
+
+/* ---------- TRACKINGS ---------- */
+app.get("/trackings", verifyJWT, async (req, res) => {
+  const trackings = await trackingsCol();
+  res.send(await trackings.find({ userEmail: req.user.email }).toArray());
+});
+
+/* ---------- PAYMENTS ---------- */
+app.post("/payments", verifyJWT, async (req, res) => {
+  const payments = await paymentsCol();
+  await payments.insertOne({
+    ...req.body,
+    createdAt: new Date(),
+  });
+
+  await trackingsCol().insertOne({
+    ...req.body,
+    status: "Completed",
+  });
+
+  res.send({ success: true });
 });
 
 /* ============================
