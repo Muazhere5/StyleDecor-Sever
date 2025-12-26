@@ -81,7 +81,7 @@ const bookingsCol = async () => (await getDB()).collection("bookings");
 const decoratorsCol = async () => (await getDB()).collection("decorators");
 const trackingsCol = async () => (await getDB()).collection("trackings");
 const paymentsCol = async () => (await getDB()).collection("payments");
-const servicesCol = async () => (await getDB()).collection("services"); // ✅ ADDED
+const servicesCol = async () => (await getDB()).collection("services");
 
 /* ============================
    AUTH MIDDLEWARE
@@ -96,7 +96,7 @@ const verifyJWT = async (req, res, next) => {
     const token = authHeader.split(" ")[1];
     req.user = await admin.auth().verifyIdToken(token);
     next();
-  } catch (err) {
+  } catch {
     return res.status(403).send({ message: "Forbidden" });
   }
 };
@@ -145,7 +145,11 @@ app.get("/users/role", verifyJWT, async (req, res) => {
 /* ---------- BOOKINGS ---------- */
 app.post("/bookings", verifyJWT, async (req, res) => {
   const bookings = await bookingsCol();
-  await bookings.insertOne(req.body);
+  await bookings.insertOne({
+    ...req.body,
+    paymentStatus: "unpaid",
+    createdAt: new Date(),
+  });
   res.send({ success: true });
 });
 
@@ -155,74 +159,66 @@ app.get("/bookings/user", verifyJWT, async (req, res) => {
   res.send(result);
 });
 
-/* ---------- DECORATORS ---------- */
-app.post("/decorators/apply", verifyJWT, async (req, res) => {
-  const decorators = await decoratorsCol();
-  await decorators.insertOne({
-    ...req.body,
-    status: "pending",
-    createdAt: new Date(),
-  });
-  res.send({ success: true });
-});
-
-app.get("/decorators", verifyJWT, verifyRole("admin"), async (req, res) => {
-  const decorators = await decoratorsCol();
-  res.send(await decorators.find().toArray());
-});
-
-app.get("/decorators/pending", verifyJWT, verifyRole("admin"), async (req, res) => {
-  const decorators = await decoratorsCol();
-  res.send(await decorators.find({ status: "pending" }).toArray());
-});
-
-/* ---------- SERVICES (NEW) ---------- */
-app.post("/services", verifyJWT, async (req, res) => {
-  const services = await servicesCol();
-
-  await services.insertOne({
-    ...req.body,
-    createdBy: req.user.email,
-    createdAt: new Date(),
-  });
-
-  res.send({ success: true });
-});
-
-app.get("/services", verifyJWT, async (req, res) => {
-  const services = await servicesCol();
-  const result = await services.find().toArray();
-  res.send(result);
-});
-
-app.get("/services/user", verifyJWT, async (req, res) => {
-  const services = await servicesCol();
-  const result = await services
-    .find({ createdBy: req.user.email })
-    .toArray();
-  res.send(result);
-});
-
-/* ---------- TRACKINGS ---------- */
-app.get("/trackings", verifyJWT, async (req, res) => {
-  const trackings = await trackingsCol();
-  res.send(await trackings.find({ userEmail: req.user.email }).toArray());
-});
-
-/* ---------- PAYMENTS ---------- */
+/* ---------- PAYMENTS (FIXED) ---------- */
 app.post("/payments", verifyJWT, async (req, res) => {
-  const payments = await paymentsCol();
-  await payments.insertOne({
-    ...req.body,
-    createdAt: new Date(),
-  });
+  try {
+    const {
+      bookingId,
+      amount,
+      transactionId,
+      trackingId,
+      email,
+      serviceType,
+      region,
+    } = req.body;
 
-  await trackingsCol().insertOne({
-    ...req.body,
-    status: "Completed",
-  });
+    if (!bookingId || !amount) {
+      return res.status(400).send({ message: "Invalid payment data" });
+    }
 
-  res.send({ success: true });
+    const bookings = await bookingsCol();
+    const payments = await paymentsCol();
+
+    const booking = await bookings.findOne({
+      _id: new ObjectId(bookingId),
+    });
+
+    if (!booking) {
+      return res.status(404).send({ message: "Booking not found" });
+    }
+
+    // Save payment
+    await payments.insertOne({
+      bookingId: new ObjectId(bookingId),
+      amount,
+      transactionId,
+      trackingId,
+      email,
+      serviceType,
+      region,
+      status: "paid",
+      createdAt: new Date(),
+    });
+
+    // Update booking payment status
+    await bookings.updateOne(
+      { _id: new ObjectId(bookingId) },
+      { $set: { paymentStatus: "paid" } }
+    );
+
+    // Tracking
+    await trackingsCol().insertOne({
+      bookingId,
+      email,
+      status: "Completed",
+      createdAt: new Date(),
+    });
+
+    res.send({ success: true });
+  } catch (error) {
+    console.error("❌ PAYMENT ERROR:", error);
+    res.status(500).send({ message: "Payment failed" });
+  }
 });
 
 /* ============================
