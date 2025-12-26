@@ -6,14 +6,16 @@ const { MongoClient, ObjectId, ServerApiVersion } = require("mongodb");
 const admin = require("firebase-admin");
 
 /* ============================
-   FIREBASE ADMIN INIT
+   FIREBASE ADMIN INIT (FIXED)
 ============================ */
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+      privateKey: process.env.FIREBASE_PRIVATE_KEY
+        ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
+        : undefined,
     }),
   });
 }
@@ -23,7 +25,6 @@ if (!admin.apps.length) {
 ============================ */
 const app = express();
 
-/* ✅ FIXED CORS (IMPORTANT) */
 app.use(
   cors({
     origin: [
@@ -35,13 +36,11 @@ app.use(
   })
 );
 
-/* ✅ REQUIRED FOR VERCEL PREFLIGHT */
 app.options("*", cors());
-
 app.use(express.json());
 
 /* ============================
-   DATABASE CONNECTION
+   DATABASE CONNECTION (FIXED)
 ============================ */
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB_CLUSTER}/${process.env.DB_NAME}?retryWrites=true&w=majority`;
 
@@ -54,23 +53,24 @@ const client = new MongoClient(uri, {
 });
 
 let db;
-async function connectDB() {
-  if (db) return db;
-  await client.connect();
-  db = client.db(process.env.DB_NAME);
+
+async function getDB() {
+  if (!db) {
+    await client.connect();
+    db = client.db(process.env.DB_NAME);
+  }
   return db;
 }
-connectDB();
 
 /* ============================
-   COLLECTIONS
+   COLLECTIONS (SAFE)
 ============================ */
-const usersCol = () => db.collection("users");
-const decoratorsCol = () => db.collection("decorators");
-const servicesCol = () => db.collection("services");
-const bookingsCol = () => db.collection("bookings");
-const paymentsCol = () => db.collection("payments");
-const trackingCol = () => db.collection("trackings");
+const usersCol = async () => (await getDB()).collection("users");
+const decoratorsCol = async () => (await getDB()).collection("decorators");
+const servicesCol = async () => (await getDB()).collection("services");
+const bookingsCol = async () => (await getDB()).collection("bookings");
+const paymentsCol = async () => (await getDB()).collection("payments");
+const trackingCol = async () => (await getDB()).collection("trackings");
 
 /* ============================
    MIDDLEWARE
@@ -85,49 +85,74 @@ const verifyJWT = async (req, res, next) => {
     const token = authHeader.split(" ")[1];
     req.user = await admin.auth().verifyIdToken(token);
     next();
-  } catch {
-    return res.status(403).send({ message: "Forbidden" });
+  } catch (err) {
+    console.error("JWT Error:", err);
+    res.status(403).send({ message: "Forbidden" });
   }
 };
 
 const verifyRole = role => async (req, res, next) => {
-  const user = await usersCol().findOne({ email: req.user.email });
-  if (!user || user.role !== role) {
-    return res.status(403).send({ message: "Access denied" });
+  try {
+    const users = await usersCol();
+    const user = await users.findOne({ email: req.user.email });
+
+    if (!user || user.role !== role) {
+      return res.status(403).send({ message: "Access denied" });
+    }
+    next();
+  } catch (err) {
+    console.error("Role Error:", err);
+    res.status(500).send({ message: "Server error" });
   }
-  next();
 };
 
 /* ============================
-   USERS
+   USERS ROUTES
 ============================ */
 app.post("/users", async (req, res) => {
-  const exists = await usersCol().findOne({ email: req.body.email });
-  if (exists) return res.send({ message: "User already exists" });
+  try {
+    const users = await usersCol();
+    const exists = await users.findOne({ email: req.body.email });
 
-  await usersCol().insertOne({
-    ...req.body,
-    role: "user",
-    createdAt: new Date(),
-  });
+    if (exists) return res.send({ message: "User already exists" });
 
-  res.send({ message: "User created successfully" });
-});
+    await users.insertOne({
+      ...req.body,
+      role: "user",
+      createdAt: new Date(),
+    });
 
-/* ✅ ADMIN: GET ALL USERS */
-app.get("/users", verifyJWT, verifyRole("admin"), async (req, res) => {
-  res.send(await usersCol().find().toArray());
-});
-
-/* ✅ FIX: ROLE API (CRITICAL) */
-app.get("/users/role", verifyJWT, async (req, res) => {
-  const user = await usersCol().findOne({ email: req.user.email });
-
-  if (!user) {
-    return res.send({ role: "user" });
+    res.send({ message: "User created successfully" });
+  } catch (err) {
+    console.error("POST /users:", err);
+    res.status(500).send({ message: "Server error" });
   }
+});
 
-  res.send({ role: user.role });
+app.get("/users", verifyJWT, verifyRole("admin"), async (req, res) => {
+  try {
+    const users = await usersCol();
+    res.send(await users.find().toArray());
+  } catch (err) {
+    console.error("GET /users:", err);
+    res.status(500).send({ message: "Server error" });
+  }
+});
+
+app.get("/users/role", verifyJWT, async (req, res) => {
+  try {
+    const users = await usersCol();
+    const user = await users.findOne({ email: req.user.email });
+
+    if (!user) {
+      return res.send({ role: "user" });
+    }
+
+    res.send({ role: user.role });
+  } catch (err) {
+    console.error("GET /users/role:", err);
+    res.status(500).send({ role: "user" });
+  }
 });
 
 /* ============================
