@@ -203,26 +203,32 @@ app.get("/payments", verifyJWT, async (req, res) => {
 });
 
 /* ============================
-   ✅ DECORATOR SERVICES
+   DECORATOR ROUTES ✅ (FIXED)
 ============================ */
 
-// GET services assigned to decorator
-app.get("/services", verifyJWT, async (req, res) => {
-  const services = await servicesCol();
-  const result = await services.find({
-    decoratorEmail: req.user.email,
-  }).toArray();
-
+// Get pending decorators
+app.get("/decorators/pending", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const decorators = await decoratorsCol();
+  const result = await decorators.find({ status: "pending" }).toArray();
   res.send(result);
 });
 
-// UPDATE status or price
-app.patch("/services/:id", verifyJWT, async (req, res) => {
-  const services = await servicesCol();
-  await services.updateOne(
+// Get approved decorators
+app.get("/decorators", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const decorators = await decoratorsCol();
+  const result = await decorators.find({ status: "approved" }).toArray();
+  res.send(result);
+});
+
+// Approve decorator
+app.patch("/decorators/approve/:id", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const decorators = await decoratorsCol();
+
+  await decorators.updateOne(
     { _id: new ObjectId(req.params.id) },
-    { $set: req.body }
+    { $set: { status: "approved" } }
   );
+
   res.send({ success: true });
 });
 
