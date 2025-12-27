@@ -108,6 +108,27 @@ app.get("/", (req, res) => {
 });
 
 /* ============================
+   NEW ENDPOINTS FOR ROLE & USER BOOKINGS
+============================ */
+
+// GET logged-in user's role
+app.get("/users/role", verifyJWT, async (req, res) => {
+  const users = await usersCol();
+  const user = await users.findOne({ email: req.user.email });
+  if (!user) return res.status(404).send({ message: "User not found" });
+  res.send({ role: user.role });
+});
+
+// GET bookings for logged-in user
+app.get("/bookings/user", verifyJWT, async (req, res) => {
+  const bookings = await bookingsCol();
+  const userBookings = await bookings
+    .find({ userEmail: req.user.email })
+    .toArray();
+  res.send(userBookings);
+});
+
+/* ============================
    ADMIN DASHBOARD FIXES
 ============================ */
 
