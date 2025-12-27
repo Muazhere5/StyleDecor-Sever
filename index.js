@@ -216,17 +216,49 @@ app.patch("/decorators/approve/:id", verifyJWT, verifyRole("admin"), async (req,
   res.send({ success: true });
 });
 
+
 /* ============================
-   SERVICES (DECORATOR VIEW)
+   ASSIGN SERVICE (ADMIN)
+============================ */
+app.post("/services", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const services = await servicesCol();
+
+  const serviceData = {
+    ...req.body,
+    status: "Assigned", // enforce correct casing
+    createdAt: new Date(),
+  };
+
+  await services.insertOne(serviceData);
+  res.send({ success: true });
+});
+
+
+/* ============================
+   SERVICES (ADMIN + DECORATOR)
 ============================ */
 app.get("/services", verifyJWT, async (req, res) => {
   const services = await servicesCol();
+  const users = await usersCol();
+
+  const user = await users.findOne({ email: req.user.email });
+
+  if (user.role === "admin") {
+    return res.send(await services.find().toArray());
+  }
+
   const result = await services.find({
     decoratorEmail: req.user.email,
   }).toArray();
 
   res.send(result);
 });
+
+
+
+
+
+
 
 /* ============================
    UPDATE SERVICE STATUS
@@ -241,12 +273,15 @@ app.patch("/services/:id", verifyJWT, async (req, res) => {
 
   if (!service) return res.status(404).send({ message: "Service not found" });
 
-  if (
-    (service.status === "Assigned" && status !== "Confirmed") ||
-    (service.status === "Confirmed" && status !== "Completed")
-  ) {
-    return res.status(400).send({ message: "Invalid status flow" });
-  }
+  const validTransitions = {
+  Assigned: "Confirmed",
+  Confirmed: "Completed",
+};
+
+if (validTransitions[service.status] !== status) {
+  return res.status(400).send({ message: "Invalid status flow" });
+}
+
 
   await services.updateOne(
     { _id: service._id },
