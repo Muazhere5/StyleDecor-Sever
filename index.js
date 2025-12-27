@@ -157,7 +157,7 @@ app.get("/bookings", verifyJWT, verifyRole("admin"), async (req, res) => {
 });
 
 /* ============================
-   PAYMENTS ✅ FIXED
+   PAYMENTS
 ============================ */
 app.post("/payments", verifyJWT, async (req, res) => {
   const payments = await paymentsCol();
@@ -184,7 +184,6 @@ app.post("/payments", verifyJWT, async (req, res) => {
     createdAt: new Date(),
   });
 
-  // update booking payment status
   await bookings.updateOne(
     { _id: new ObjectId(bookingId) },
     {
@@ -204,33 +203,57 @@ app.get("/payments", verifyJWT, async (req, res) => {
 });
 
 /* ============================
-   DECORATORS
+   ✅ DECORATOR ROUTES (NEW)
 ============================ */
-app.get("/decorators", verifyJWT, verifyRole("admin"), async (req, res) => {
-  const decorators = await decoratorsCol();
-  res.send(await decorators.find({ status: "approved" }).toArray());
+
+// Get assigned services for decorator
+app.get("/decorator/tasks", verifyJWT, async (req, res) => {
+  const services = await servicesCol();
+  const data = await services.find({
+    decoratorEmail: req.user.email,
+  }).toArray();
+
+  res.send(data);
 });
 
-app.get("/decorators/pending", verifyJWT, verifyRole("admin"), async (req, res) => {
-  const decorators = await decoratorsCol();
-  res.send(await decorators.find({ status: "pending" }).toArray());
-});
+// Update service status
+app.patch("/decorator/update-status/:id", verifyJWT, async (req, res) => {
+  const services = await servicesCol();
 
-app.patch("/decorators/approve/:id", verifyJWT, verifyRole("admin"), async (req, res) => {
-  const decorators = await decoratorsCol();
-  await decorators.updateOne(
+  await services.updateOne(
     { _id: new ObjectId(req.params.id) },
-    { $set: { status: "approved" } }
+    { $set: { status: req.body.status } }
   );
+
   res.send({ success: true });
 });
 
 /* ============================
    TRACKINGS
 ============================ */
-app.get("/trackings", verifyJWT, verifyRole("admin"), async (req, res) => {
+app.post("/trackings", verifyJWT, async (req, res) => {
   const trackings = await trackingsCol();
-  res.send(await trackings.find().toArray());
+  await trackings.insertOne({
+    ...req.body,
+    email: req.user.email,
+    createdAt: new Date(),
+  });
+  res.send({ success: true });
+});
+
+app.get("/trackings", verifyJWT, async (req, res) => {
+  const trackings = await trackingsCol();
+
+  const user = await usersCol().then(c =>
+    c.findOne({ email: req.user.email })
+  );
+
+  if (user.role === "admin") {
+    return res.send(await trackings.find().toArray());
+  }
+
+  // decorator sees only their own records
+  res.send(await trackings.find({ email: req.user.email }).toArray());
 });
 
 /* ============================
