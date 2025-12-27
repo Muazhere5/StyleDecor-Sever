@@ -203,32 +203,51 @@ app.get("/payments", verifyJWT, async (req, res) => {
 });
 
 /* ============================
-   DECORATOR ROUTES ✅ (FIXED)
+   DECORATORS
 ============================ */
-
-// Get pending decorators
 app.get("/decorators/pending", verifyJWT, verifyRole("admin"), async (req, res) => {
   const decorators = await decoratorsCol();
-  const result = await decorators.find({ status: "pending" }).toArray();
-  res.send(result);
+  res.send(await decorators.find({ status: "pending" }).toArray());
 });
 
-// Get approved decorators
 app.get("/decorators", verifyJWT, verifyRole("admin"), async (req, res) => {
   const decorators = await decoratorsCol();
-  const result = await decorators.find({ status: "approved" }).toArray();
-  res.send(result);
+  res.send(await decorators.find({ status: "approved" }).toArray());
 });
 
-// Approve decorator
 app.patch("/decorators/approve/:id", verifyJWT, verifyRole("admin"), async (req, res) => {
   const decorators = await decoratorsCol();
-
   await decorators.updateOne(
     { _id: new ObjectId(req.params.id) },
     { $set: { status: "approved" } }
   );
+  res.send({ success: true });
+});
 
+/* ============================
+   ✅ SERVICES (FIXED)
+============================ */
+app.get("/services", verifyJWT, async (req, res) => {
+  const services = await servicesCol();
+
+  const query = {
+    decoratorEmail: req.user.email,
+  };
+
+  if (req.query.status) {
+    query.status = req.query.status;
+  }
+
+  const result = await services.find(query).toArray();
+  res.send(result);
+});
+
+/* ============================
+   SERVICES ADMIN
+============================ */
+app.post("/services", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const services = await servicesCol();
+  await services.insertOne({ ...req.body, createdAt: new Date() });
   res.send({ success: true });
 });
 
@@ -256,15 +275,6 @@ app.get("/trackings", verifyJWT, async (req, res) => {
   }
 
   res.send(await trackings.find({ email: req.user.email }).toArray());
-});
-
-/* ============================
-   SERVICES ADMIN
-============================ */
-app.post("/services", verifyJWT, verifyRole("admin"), async (req, res) => {
-  const services = await servicesCol();
-  await services.insertOne({ ...req.body, createdAt: new Date() });
-  res.send({ success: true });
 });
 
 /* ============================
