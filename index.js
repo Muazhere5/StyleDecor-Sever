@@ -258,23 +258,45 @@ app.post("/decorators/apply", verifyJWT, async (req, res) => {
 app.post("/services", verifyJWT, verifyRole("admin"), async (req, res) => {
   const services = await servicesCol();
 
-  const existing = await services.findOne({
-    bookingId: req.body.bookingId,
-  });
+  const {
+    bookingId,
+    serviceType,
+    eventType,
+    bookingDate,
+    timeSlot,
+    location,
+    price,
+    decoratorName,
+    decoratorEmail,
+    decoratorPhone,
+  } = req.body;
+
+  const existing = await services.findOne({ bookingId });
 
   if (existing) {
     return res.status(400).send({ message: "Service already assigned" });
   }
 
   const serviceData = {
-    ...req.body,
-    status: "Assigned",
+    bookingId,
+    serviceType,
+    eventType,
+    bookingDate,
+    timeSlot,
+    location,
+    price,
+    decoratorName,
+    decoratorEmail,
+    decoratorPhone,
+    status: "Assigned", // ✅ normalized
     createdAt: new Date(),
   };
 
   await services.insertOne(serviceData);
+
   res.send({ success: true });
 });
+
 
 
 /* ============================
