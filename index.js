@@ -278,7 +278,39 @@ app.get("/trackings", verifyJWT, async (req, res) => {
 });
 
 /* ============================
-   SERVICE CASHOUT (NEW)
+   SERVICES (DECORATOR FLOW)
+============================ */
+
+// Get decorator services
+app.get("/services", verifyJWT, async (req, res) => {
+  const services = await servicesCol();
+
+  const query = {
+    decoratorEmail: req.user.email,
+  };
+
+  const result = await services.find(query).toArray();
+  res.send(result);
+});
+
+// Update service status (Assigned → Confirmed → Completed)
+app.patch("/services/:id", verifyJWT, async (req, res) => {
+  const services = await servicesCol();
+
+  await services.updateOne(
+    { _id: new ObjectId(req.params.id) },
+    {
+      $set: {
+        status: req.body.status,
+      },
+    }
+  );
+
+  res.send({ success: true });
+});
+
+/* ============================
+   SERVICE CASHOUT
 ============================ */
 app.post("/services/cashout/:id", verifyJWT, async (req, res) => {
   const services = await servicesCol();
@@ -299,6 +331,7 @@ app.post("/services/cashout/:id", verifyJWT, async (req, res) => {
     return res.status(400).send({ message: "Payment not found" });
   }
 
+  // 40% calculation
   const decoratorAmount = Number((payment.amount * 0.4).toFixed(2));
 
   await services.updateOne(
