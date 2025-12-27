@@ -135,37 +135,69 @@ app.get("/users/role", verifyJWT, async (req, res) => {
 });
 
 /* ============================
-   BOOKINGS ✅ FIXED
+   BOOKINGS
 ============================ */
-
-// CREATE BOOKING
 app.post("/bookings", verifyJWT, async (req, res) => {
   const bookings = await bookingsCol();
-
-  const bookingData = {
+  await bookings.insertOne({
     ...req.body,
     createdAt: new Date(),
-  };
-
-  await bookings.insertOne(bookingData);
+  });
   res.send({ success: true });
 });
 
-// USER BOOKINGS
 app.get("/bookings/user", verifyJWT, async (req, res) => {
   const bookings = await bookingsCol();
   res.send(await bookings.find({ userEmail: req.user.email }).toArray());
 });
 
-// ADMIN BOOKINGS
 app.get("/bookings", verifyJWT, verifyRole("admin"), async (req, res) => {
   const bookings = await bookingsCol();
   res.send(await bookings.find().toArray());
 });
 
 /* ============================
-   PAYMENTS
+   PAYMENTS ✅ FIXED
 ============================ */
+app.post("/payments", verifyJWT, async (req, res) => {
+  const payments = await paymentsCol();
+  const bookings = await bookingsCol();
+
+  const {
+    bookingId,
+    amount,
+    transactionId,
+    trackingId,
+    email,
+    serviceType,
+    region,
+  } = req.body;
+
+  await payments.insertOne({
+    bookingId,
+    amount,
+    transactionId,
+    trackingId,
+    email,
+    serviceType,
+    region,
+    createdAt: new Date(),
+  });
+
+  // update booking payment status
+  await bookings.updateOne(
+    { _id: new ObjectId(bookingId) },
+    {
+      $set: {
+        paymentStatus: "paid",
+        transactionId,
+      },
+    }
+  );
+
+  res.send({ success: true });
+});
+
 app.get("/payments", verifyJWT, async (req, res) => {
   const payments = await paymentsCol();
   res.send(await payments.find({ email: req.user.email }).toArray());
