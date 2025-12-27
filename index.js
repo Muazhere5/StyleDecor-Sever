@@ -108,29 +108,23 @@ app.get("/", (req, res) => {
 });
 
 /* ============================
-   USERS (FIXED)
+   USERS
 ============================ */
-
-// CREATE USER (REGISTER)
 app.post("/users", async (req, res) => {
   const users = await usersCol();
   const existing = await users.findOne({ email: req.body.email });
 
-  if (existing) {
-    return res.send({ message: "User already exists" });
-  }
+  if (existing) return res.send({ message: "User already exists" });
 
   await users.insertOne(req.body);
   res.send({ success: true });
 });
 
-// GET ALL USERS (ADMIN)
 app.get("/users", verifyJWT, verifyRole("admin"), async (req, res) => {
   const users = await usersCol();
   res.send(await users.find().toArray());
 });
 
-// GET USER ROLE
 app.get("/users/role", verifyJWT, async (req, res) => {
   const users = await usersCol();
   const user = await users.findOne({ email: req.user.email });
@@ -141,20 +135,36 @@ app.get("/users/role", verifyJWT, async (req, res) => {
 });
 
 /* ============================
-   BOOKINGS
+   BOOKINGS ✅ FIXED
 ============================ */
+
+// CREATE BOOKING
+app.post("/bookings", verifyJWT, async (req, res) => {
+  const bookings = await bookingsCol();
+
+  const bookingData = {
+    ...req.body,
+    createdAt: new Date(),
+  };
+
+  await bookings.insertOne(bookingData);
+  res.send({ success: true });
+});
+
+// USER BOOKINGS
 app.get("/bookings/user", verifyJWT, async (req, res) => {
   const bookings = await bookingsCol();
   res.send(await bookings.find({ userEmail: req.user.email }).toArray());
 });
 
+// ADMIN BOOKINGS
 app.get("/bookings", verifyJWT, verifyRole("admin"), async (req, res) => {
   const bookings = await bookingsCol();
   res.send(await bookings.find().toArray());
 });
 
 /* ============================
-   PAYMENTS (FIXED)
+   PAYMENTS
 ============================ */
 app.get("/payments", verifyJWT, async (req, res) => {
   const payments = await paymentsCol();
