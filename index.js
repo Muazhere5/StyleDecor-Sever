@@ -5,7 +5,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
 
 /* ============================
-   STRIPE (SAFE)
+   STRIPE
 ============================ */
 let stripe = null;
 if (process.env.STRIPE_SECRET) {
@@ -108,49 +108,72 @@ app.get("/", (req, res) => {
 });
 
 /* ============================
-   NEW ENDPOINTS FOR ROLE & USER BOOKINGS
+   USERS (FIXED)
 ============================ */
 
-// GET logged-in user's role
+// CREATE USER (REGISTER)
+app.post("/users", async (req, res) => {
+  const users = await usersCol();
+  const existing = await users.findOne({ email: req.body.email });
+
+  if (existing) {
+    return res.send({ message: "User already exists" });
+  }
+
+  await users.insertOne(req.body);
+  res.send({ success: true });
+});
+
+// GET ALL USERS (ADMIN)
+app.get("/users", verifyJWT, verifyRole("admin"), async (req, res) => {
+  const users = await usersCol();
+  res.send(await users.find().toArray());
+});
+
+// GET USER ROLE
 app.get("/users/role", verifyJWT, async (req, res) => {
   const users = await usersCol();
   const user = await users.findOne({ email: req.user.email });
+
   if (!user) return res.status(404).send({ message: "User not found" });
+
   res.send({ role: user.role });
 });
 
-// GET bookings for logged-in user
+/* ============================
+   BOOKINGS
+============================ */
 app.get("/bookings/user", verifyJWT, async (req, res) => {
   const bookings = await bookingsCol();
-  const userBookings = await bookings
-    .find({ userEmail: req.user.email })
-    .toArray();
-  res.send(userBookings);
+  res.send(await bookings.find({ userEmail: req.user.email }).toArray());
 });
 
-/* ============================
-   ADMIN DASHBOARD FIXES
-============================ */
-
-/* 🔹 GET ALL BOOKINGS (ADMIN) */
 app.get("/bookings", verifyJWT, verifyRole("admin"), async (req, res) => {
   const bookings = await bookingsCol();
   res.send(await bookings.find().toArray());
 });
 
-/* 🔹 GET ALL DECORATORS */
+/* ============================
+   PAYMENTS (FIXED)
+============================ */
+app.get("/payments", verifyJWT, async (req, res) => {
+  const payments = await paymentsCol();
+  res.send(await payments.find({ email: req.user.email }).toArray());
+});
+
+/* ============================
+   DECORATORS
+============================ */
 app.get("/decorators", verifyJWT, verifyRole("admin"), async (req, res) => {
   const decorators = await decoratorsCol();
   res.send(await decorators.find({ status: "approved" }).toArray());
 });
 
-/* 🔹 GET PENDING DECORATORS */
 app.get("/decorators/pending", verifyJWT, verifyRole("admin"), async (req, res) => {
   const decorators = await decoratorsCol();
   res.send(await decorators.find({ status: "pending" }).toArray());
 });
 
-/* 🔹 APPROVE DECORATOR */
 app.patch("/decorators/approve/:id", verifyJWT, verifyRole("admin"), async (req, res) => {
   const decorators = await decoratorsCol();
   await decorators.updateOne(
@@ -160,27 +183,22 @@ app.patch("/decorators/approve/:id", verifyJWT, verifyRole("admin"), async (req,
   res.send({ success: true });
 });
 
-/* 🔹 TRACKINGS (ADMIN) */
+/* ============================
+   TRACKINGS
+============================ */
 app.get("/trackings", verifyJWT, verifyRole("admin"), async (req, res) => {
   const trackings = await trackingsCol();
   res.send(await trackings.find().toArray());
 });
 
-/* 🔹 CREATE SERVICE (Assign Decorator) */
+/* ============================
+   SERVICES
+============================ */
 app.post("/services", verifyJWT, verifyRole("admin"), async (req, res) => {
   const services = await servicesCol();
-  await services.insertOne({
-    ...req.body,
-    createdAt: new Date(),
-  });
+  await services.insertOne({ ...req.body, createdAt: new Date() });
   res.send({ success: true });
 });
-
-/* ============================
-   EXISTING ROUTES (UNCHANGED)
-============================ */
-
-/* USERS, BOOKINGS, PAYMENTS remain same as yours */
 
 /* ============================
    EXPORT
