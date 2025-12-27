@@ -218,6 +218,41 @@ app.patch("/decorators/approve/:id", verifyJWT, verifyRole("admin"), async (req,
 
 
 /* ============================
+   APPLY AS DECORATOR
+============================ */
+app.post("/decorators/apply", verifyJWT, async (req, res) => {
+  const decorators = await decoratorsCol();
+
+  const { name, email, phone, nid, experience } = req.body;
+
+  // Check if already applied
+  const existing = await decorators.findOne({ email });
+
+  if (existing) {
+    return res.status(400).send({
+      message: "You have already applied as a decorator",
+    });
+  }
+
+  const decoratorData = {
+    name,
+    email,
+    phone,
+    nid,
+    experience,
+    status: "pending",
+    createdAt: new Date(),
+  };
+
+  await decorators.insertOne(decoratorData);
+
+  res.send({ success: true });
+});
+
+
+
+
+/* ============================
    ASSIGN SERVICE (ADMIN)
 ============================ */
 app.post("/services", verifyJWT, verifyRole("admin"), async (req, res) => {
