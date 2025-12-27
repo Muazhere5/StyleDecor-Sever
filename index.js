@@ -139,10 +139,7 @@ app.get("/users/role", verifyJWT, async (req, res) => {
 ============================ */
 app.post("/bookings", verifyJWT, async (req, res) => {
   const bookings = await bookingsCol();
-  await bookings.insertOne({
-    ...req.body,
-    createdAt: new Date(),
-  });
+  await bookings.insertOne({ ...req.body, createdAt: new Date() });
   res.send({ success: true });
 });
 
@@ -186,12 +183,7 @@ app.post("/payments", verifyJWT, async (req, res) => {
 
   await bookings.updateOne(
     { _id: new ObjectId(bookingId) },
-    {
-      $set: {
-        paymentStatus: "paid",
-        transactionId,
-      },
-    }
+    { $set: { paymentStatus: "paid", transactionId } }
   );
 
   res.send({ success: true });
@@ -225,85 +217,40 @@ app.patch("/decorators/approve/:id", verifyJWT, verifyRole("admin"), async (req,
 });
 
 /* ============================
-   ✅ SERVICES (FIXED)
+   SERVICES (DECORATOR VIEW)
 ============================ */
 app.get("/services", verifyJWT, async (req, res) => {
   const services = await servicesCol();
-
-  const query = {
+  const result = await services.find({
     decoratorEmail: req.user.email,
-  };
+  }).toArray();
 
-  if (req.query.status) {
-    query.status = req.query.status;
-  }
-
-  const result = await services.find(query).toArray();
   res.send(result);
 });
 
 /* ============================
-   SERVICES ADMIN
+   UPDATE SERVICE STATUS
 ============================ */
-app.post("/services", verifyJWT, verifyRole("admin"), async (req, res) => {
-  const services = await servicesCol();
-  await services.insertOne({ ...req.body, createdAt: new Date() });
-  res.send({ success: true });
-});
-
-/* ============================
-   TRACKINGS
-============================ */
-app.post("/trackings", verifyJWT, async (req, res) => {
-  const trackings = await trackingsCol();
-  await trackings.insertOne({
-    ...req.body,
-    email: req.user.email,
-    createdAt: new Date(),
-  });
-  res.send({ success: true });
-});
-
-app.get("/trackings", verifyJWT, async (req, res) => {
-  const trackings = await trackingsCol();
-  const user = await usersCol().then(c =>
-    c.findOne({ email: req.user.email })
-  );
-
-  if (user.role === "admin") {
-    return res.send(await trackings.find().toArray());
-  }
-
-  res.send(await trackings.find({ email: req.user.email }).toArray());
-});
-
-/* ============================
-   SERVICES (DECORATOR FLOW)
-============================ */
-
-// Get decorator services
-app.get("/services", verifyJWT, async (req, res) => {
-  const services = await servicesCol();
-
-  const query = {
-    decoratorEmail: req.user.email,
-  };
-
-  const result = await services.find(query).toArray();
-  res.send(result);
-});
-
-// Update service status (Assigned → Confirmed → Completed)
 app.patch("/services/:id", verifyJWT, async (req, res) => {
   const services = await servicesCol();
+  const { status } = req.body;
+
+  const service = await services.findOne({
+    _id: new ObjectId(req.params.id),
+  });
+
+  if (!service) return res.status(404).send({ message: "Service not found" });
+
+  if (
+    (service.status === "Assigned" && status !== "Confirmed") ||
+    (service.status === "Confirmed" && status !== "Completed")
+  ) {
+    return res.status(400).send({ message: "Invalid status flow" });
+  }
 
   await services.updateOne(
-    { _id: new ObjectId(req.params.id) },
-    {
-      $set: {
-        status: req.body.status,
-      },
-    }
+    { _id: service._id },
+    { $set: { status } }
   );
 
   res.send({ success: true });
@@ -323,15 +270,17 @@ app.post("/services/cashout/:id", verifyJWT, async (req, res) => {
 
   if (!service) return res.status(404).send({ message: "Service not found" });
 
+  if (service.price && service.price > 0) {
+    return res.status(400).send({ message: "Already cashed out" });
+  }
+
   const payment = await payments.findOne({
     bookingId: service.bookingId,
   });
 
-  if (!payment) {
+  if (!payment)
     return res.status(400).send({ message: "Payment not found" });
-  }
 
-  // 40% calculation
   const decoratorAmount = Number((payment.amount * 0.4).toFixed(2));
 
   await services.updateOne(
@@ -355,7 +304,6 @@ app.post("/services/cashout/:id", verifyJWT, async (req, res) => {
 
   res.send({ success: true });
 });
-
 
 /* ============================
    EXPORT
