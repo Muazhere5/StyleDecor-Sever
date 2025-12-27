@@ -203,28 +203,26 @@ app.get("/payments", verifyJWT, async (req, res) => {
 });
 
 /* ============================
-   ✅ DECORATOR ROUTES (NEW)
+   ✅ DECORATOR SERVICES
 ============================ */
 
-// Get assigned services for decorator
-app.get("/decorator/tasks", verifyJWT, async (req, res) => {
+// GET services assigned to decorator
+app.get("/services", verifyJWT, async (req, res) => {
   const services = await servicesCol();
-  const data = await services.find({
+  const result = await services.find({
     decoratorEmail: req.user.email,
   }).toArray();
 
-  res.send(data);
+  res.send(result);
 });
 
-// Update service status
-app.patch("/decorator/update-status/:id", verifyJWT, async (req, res) => {
+// UPDATE status or price
+app.patch("/services/:id", verifyJWT, async (req, res) => {
   const services = await servicesCol();
-
   await services.updateOne(
     { _id: new ObjectId(req.params.id) },
-    { $set: { status: req.body.status } }
+    { $set: req.body }
   );
-
   res.send({ success: true });
 });
 
@@ -243,7 +241,6 @@ app.post("/trackings", verifyJWT, async (req, res) => {
 
 app.get("/trackings", verifyJWT, async (req, res) => {
   const trackings = await trackingsCol();
-
   const user = await usersCol().then(c =>
     c.findOne({ email: req.user.email })
   );
@@ -252,12 +249,11 @@ app.get("/trackings", verifyJWT, async (req, res) => {
     return res.send(await trackings.find().toArray());
   }
 
-  // decorator sees only their own records
   res.send(await trackings.find({ email: req.user.email }).toArray());
 });
 
 /* ============================
-   SERVICES
+   SERVICES ADMIN
 ============================ */
 app.post("/services", verifyJWT, verifyRole("admin"), async (req, res) => {
   const services = await servicesCol();
