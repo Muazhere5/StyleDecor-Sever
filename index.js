@@ -278,6 +278,53 @@ app.get("/trackings", verifyJWT, async (req, res) => {
 });
 
 /* ============================
+   SERVICE CASHOUT (NEW)
+============================ */
+app.post("/services/cashout/:id", verifyJWT, async (req, res) => {
+  const services = await servicesCol();
+  const payments = await paymentsCol();
+  const trackings = await trackingsCol();
+
+  const service = await services.findOne({
+    _id: new ObjectId(req.params.id),
+  });
+
+  if (!service) return res.status(404).send({ message: "Service not found" });
+
+  const payment = await payments.findOne({
+    bookingId: service.bookingId,
+  });
+
+  if (!payment) {
+    return res.status(400).send({ message: "Payment not found" });
+  }
+
+  const decoratorAmount = Number((payment.amount * 0.4).toFixed(2));
+
+  await services.updateOne(
+    { _id: service._id },
+    {
+      $set: {
+        price: decoratorAmount,
+        status: "Completed",
+      },
+    }
+  );
+
+  await trackings.insertOne({
+    bookingId: service.bookingId,
+    trackingNo: req.body.trackingNo,
+    cost: decoratorAmount,
+    status: "Completed",
+    email: req.user.email,
+    createdAt: new Date(),
+  });
+
+  res.send({ success: true });
+});
+
+
+/* ============================
    EXPORT
 ============================ */
 module.exports = app;
