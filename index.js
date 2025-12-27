@@ -223,9 +223,17 @@ app.patch("/decorators/approve/:id", verifyJWT, verifyRole("admin"), async (req,
 app.post("/services", verifyJWT, verifyRole("admin"), async (req, res) => {
   const services = await servicesCol();
 
+  const existing = await services.findOne({
+    bookingId: req.body.bookingId,
+  });
+
+  if (existing) {
+    return res.status(400).send({ message: "Service already assigned" });
+  }
+
   const serviceData = {
     ...req.body,
-    status: "Assigned", // enforce correct casing
+    status: "Assigned",
     createdAt: new Date(),
   };
 
@@ -254,6 +262,24 @@ app.get("/services", verifyJWT, async (req, res) => {
   res.send(result);
 });
 
+/* ============================
+   GENERATE TRACKING ID
+============================ */
+app.get("/services/:id/tracking", verifyJWT, async (req, res) => {
+  const service = await servicesCol().then(col =>
+    col.findOne({ _id: new ObjectId(req.params.id) })
+  );
+
+  if (!service) {
+    return res.status(404).send({ message: "Service not found" });
+  }
+
+  const trackingId = `TRK-${Date.now().toString().slice(-6)}-${Math.floor(
+    Math.random() * 1000
+  )}`;
+
+  res.send({ trackingId });
+});
 
 
 
