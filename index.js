@@ -172,6 +172,57 @@ app.get("/bookings", verifyJWT, verifyRole("admin"), async (req, res) => {
   res.send(await bookings.find().toArray());
 });
 
+
+// 📊 Completed bookings (Admin Analytics)
+app.get(
+  "/bookings/completed",
+  verifyJWT,
+  verifyRole("admin"),
+  async (req, res) => {
+    const bookings = await bookingsCol();
+    const result = await bookings.find({ status: "Completed" }).toArray();
+    res.send(result);
+  }
+);
+
+
+
+// 🗑 Delete completed booking (Admin)
+app.delete(
+  "/bookings/:id",
+  verifyJWT,
+  verifyRole("admin"),
+  async (req, res) => {
+    const bookings = await bookingsCol();
+    const services = await servicesCol();
+
+    const booking = await bookings.findOne({
+      _id: new ObjectId(req.params.id),
+    });
+
+    if (!booking) {
+      return res.status(404).send({ message: "Booking not found" });
+    }
+
+    if (booking.status !== "Completed") {
+      return res
+        .status(400)
+        .send({ message: "Only completed bookings can be deleted" });
+    }
+
+    await bookings.deleteOne({ _id: booking._id });
+
+    // optional cleanup
+    await services.deleteMany({ bookingId: booking._id.toString() });
+
+    res.send({ success: true });
+  }
+);
+
+
+
+
+
 /* ============================
    PAYMENTS
 ============================ */
