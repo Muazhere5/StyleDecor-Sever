@@ -139,9 +139,28 @@ app.get("/users/role", verifyJWT, async (req, res) => {
 ============================ */
 app.post("/bookings", verifyJWT, async (req, res) => {
   const bookings = await bookingsCol();
-  await bookings.insertOne({ ...req.body, createdAt: new Date() });
-  res.send({ success: true });
+
+  const booking = {
+    ...req.body,
+    userEmail: req.user.email, // 🔐 secure
+    createdAt: new Date(),
+  };
+
+  const result = await bookings.insertOne(booking);
+
+  if (!result.insertedId) {
+    console.error("❌ Booking insert failed", booking);
+    return res.status(500).send({ message: "Booking not saved" });
+  }
+
+  console.log("✅ Booking saved:", result.insertedId);
+
+  res.send({
+    success: true,
+    bookingId: result.insertedId,
+  });
 });
+
 
 app.get("/bookings/user", verifyJWT, async (req, res) => {
   const bookings = await bookingsCol();
