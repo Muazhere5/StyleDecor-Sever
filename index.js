@@ -415,21 +415,48 @@ app.get("/services", verifyJWT, async (req, res) => {
   res.send(result);
 });
 
+
+
+
 /* ============================
    GENERATE TRACKING ID
 ============================ */
 app.get("/services/:id/tracking", verifyJWT, async (req, res) => {
-  const service = await servicesCol().then(col =>
-    col.findOne({ _id: new ObjectId(req.params.id) })
-  );
+  const services = await servicesCol();
+  const bookings = await bookingsCol();
+
+  const service = await services.findOne({
+    _id: new ObjectId(req.params.id),
+  });
 
   if (!service) {
     return res.status(404).send({ message: "Service not found" });
   }
 
+  // 1️⃣ Generate Tracking ID
   const trackingId = `TRK-${Date.now().toString().slice(-6)}-${Math.floor(
     Math.random() * 1000
   )}`;
+
+  // 2️⃣ Mark SERVICE as Completed
+  await services.updateOne(
+    { _id: service._id },
+    {
+      $set: {
+        status: "Completed",
+        trackingId,
+        completedAt: new Date(),
+      },
+    }
+  );
+
+  // 3️⃣ 🔗 Mark BOOKING as Completed (YOUR REQUIREMENT)
+  await bookings.updateOne(
+    { _id: new ObjectId(service.bookingId) },
+    {
+      $set: { status: "Completed" },
+    }
+  );
 
   res.send({ trackingId });
 });
