@@ -207,14 +207,40 @@ app.get("/decorators", verifyJWT, verifyRole("admin"), async (req, res) => {
   res.send(await decorators.find({ status: "approved" }).toArray());
 });
 
-app.patch("/decorators/approve/:id", verifyJWT, verifyRole("admin"), async (req, res) => {
-  const decorators = await decoratorsCol();
-  await decorators.updateOne(
-    { _id: new ObjectId(req.params.id) },
-    { $set: { status: "approved" } }
-  );
-  res.send({ success: true });
-});
+app.patch(
+  "/decorators/approve/:id",
+  verifyJWT,
+  verifyRole("admin"),
+  async (req, res) => {
+
+    const decorators = await decoratorsCol();
+    const users = await usersCol();
+
+    // 1️⃣ Find decorator
+    const decorator = await decorators.findOne({
+      _id: new ObjectId(req.params.id),
+    });
+
+    if (!decorator) {
+      return res.status(404).send({ message: "Decorator not found" });
+    }
+
+    // 2️⃣ Approve decorator
+    await decorators.updateOne(
+      { _id: decorator._id },
+      { $set: { status: "approved" } }
+    );
+
+    // 3️⃣ UPDATE USER ROLE 🔥🔥🔥
+    await users.updateOne(
+      { email: decorator.email },
+      { $set: { role: "decorator" } }
+    );
+
+    res.send({ success: true });
+  }
+);
+
 
 
 /* ============================
