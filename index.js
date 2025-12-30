@@ -4,17 +4,13 @@ const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
 
-/* ============================
-   STRIPE
-============================ */
+
 let stripe = null;
 if (process.env.STRIPE_SECRET) {
   stripe = require("stripe")(process.env.STRIPE_SECRET);
 }
 
-/* ============================
-   FIREBASE ADMIN
-============================ */
+
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
@@ -27,9 +23,7 @@ if (!admin.apps.length) {
   });
 }
 
-/* ============================
-   APP SETUP
-============================ */
+
 const app = express();
 
 app.use(
@@ -45,9 +39,7 @@ app.use(
 
 app.use(express.json());
 
-/* ============================
-   DATABASE
-============================ */
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB_CLUSTER}/${process.env.DB_NAME}?retryWrites=true&w=majority`;
 
 const client = new MongoClient(uri, {
@@ -63,9 +55,7 @@ async function getDB() {
   return db;
 }
 
-/* ============================
-   COLLECTIONS
-============================ */
+
 const usersCol = async () => (await getDB()).collection("users");
 const bookingsCol = async () => (await getDB()).collection("bookings");
 const decoratorsCol = async () => (await getDB()).collection("decorators");
@@ -73,9 +63,7 @@ const trackingsCol = async () => (await getDB()).collection("trackings");
 const paymentsCol = async () => (await getDB()).collection("payments");
 const servicesCol = async () => (await getDB()).collection("services");
 
-/* ============================
-   AUTH
-============================ */
+
 const verifyJWT = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer "))
@@ -100,16 +88,12 @@ const verifyRole = role => async (req, res, next) => {
   next();
 };
 
-/* ============================
-   ROOT
-============================ */
+
 app.get("/", (req, res) => {
   res.send("🎨 StyleDecor Server is running");
 });
 
-/* ============================
-   USERS
-============================ */
+
 app.post("/users", async (req, res) => {
   const users = await usersCol();
   const existing = await users.findOne({ email: req.body.email });
@@ -134,15 +118,13 @@ app.get("/users/role", verifyJWT, async (req, res) => {
   res.send({ role: user.role });
 });
 
-/* ============================
-   BOOKINGS
-============================ */
+
 app.post("/bookings", verifyJWT, async (req, res) => {
   const bookings = await bookingsCol();
 
   const booking = {
     ...req.body,
-    userEmail: req.user.email, // 🔐 secure
+    userEmail: req.user.email,
     createdAt: new Date(),
   };
 
@@ -173,7 +155,7 @@ app.get("/bookings", verifyJWT, verifyRole("admin"), async (req, res) => {
 });
 
 
-// 📊 Completed bookings (Admin Analytics)
+
 app.get(
   "/bookings/completed",
   verifyJWT,
@@ -187,7 +169,7 @@ app.get(
 
 
 
-// 🗑 Delete completed booking (Admin)
+
 app.delete(
   "/bookings/:id",
   verifyJWT,
@@ -212,7 +194,7 @@ app.delete(
 
     await bookings.deleteOne({ _id: booking._id });
 
-    // optional cleanup
+    
     await services.deleteMany({ bookingId: booking._id.toString() });
 
     res.send({ success: true });
@@ -223,9 +205,7 @@ app.delete(
 
 
 
-/* ============================
-   PAYMENTS
-============================ */
+
 app.post("/payments", verifyJWT, async (req, res) => {
   const payments = await paymentsCol();
   const bookings = await bookingsCol();
@@ -264,9 +244,7 @@ app.get("/payments", verifyJWT, async (req, res) => {
   res.send(await payments.find({ email: req.user.email }).toArray());
 });
 
-/* ============================
-   DECORATORS
-============================ */
+
 app.get("/decorators/pending", verifyJWT, verifyRole("admin"), async (req, res) => {
   const decorators = await decoratorsCol();
   res.send(await decorators.find({ status: "pending" }).toArray());
@@ -286,7 +264,7 @@ app.patch(
     const decorators = await decoratorsCol();
     const users = await usersCol();
 
-    // 1️⃣ Find decorator
+    
     const decorator = await decorators.findOne({
       _id: new ObjectId(req.params.id),
     });
@@ -295,13 +273,13 @@ app.patch(
       return res.status(404).send({ message: "Decorator not found" });
     }
 
-    // 2️⃣ Approve decorator
+    
     await decorators.updateOne(
       { _id: decorator._id },
       { $set: { status: "approved" } }
     );
 
-    // 3️⃣ UPDATE USER ROLE 🔥🔥🔥
+    
     await users.updateOne(
       { email: decorator.email },
       { $set: { role: "decorator" } }
@@ -313,15 +291,13 @@ app.patch(
 
 
 
-/* ============================
-   APPLY AS DECORATOR
-============================ */
+
 app.post("/decorators/apply", verifyJWT, async (req, res) => {
   const decorators = await decoratorsCol();
 
   const { name, email, phone, nid, experience } = req.body;
 
-  // Check if already applied
+  
   const existing = await decorators.findOne({ email });
 
   if (existing) {
@@ -348,9 +324,7 @@ app.post("/decorators/apply", verifyJWT, async (req, res) => {
 
 
 
-/* ============================
-   ASSIGN SERVICE (ADMIN)
-============================ */
+
 app.post("/services", verifyJWT, verifyRole("admin"), async (req, res) => {
   const services = await servicesCol();
 
@@ -384,7 +358,7 @@ app.post("/services", verifyJWT, verifyRole("admin"), async (req, res) => {
     decoratorName,
     decoratorEmail,
     decoratorPhone,
-    status: "Assigned", // ✅ normalized
+    status: "Assigned", 
     createdAt: new Date(),
   };
 
@@ -395,9 +369,7 @@ app.post("/services", verifyJWT, verifyRole("admin"), async (req, res) => {
 
 
 
-/* ============================
-   SERVICES (ADMIN + DECORATOR)
-============================ */
+
 app.get("/services", verifyJWT, async (req, res) => {
   const services = await servicesCol();
   const users = await usersCol();
@@ -418,9 +390,7 @@ app.get("/services", verifyJWT, async (req, res) => {
 
 
 
-/* ============================
-   GENERATE TRACKING ID
-============================ */
+
 app.get("/services/:id/tracking", verifyJWT, async (req, res) => {
   const services = await servicesCol();
   const bookings = await bookingsCol();
@@ -433,12 +403,12 @@ app.get("/services/:id/tracking", verifyJWT, async (req, res) => {
     return res.status(404).send({ message: "Service not found" });
   }
 
-  // 1️⃣ Generate Tracking ID
+  
   const trackingId = `TRK-${Date.now().toString().slice(-6)}-${Math.floor(
     Math.random() * 1000
   )}`;
 
-  // 2️⃣ Mark SERVICE as Completed
+  
   await services.updateOne(
     { _id: service._id },
     {
@@ -450,7 +420,7 @@ app.get("/services/:id/tracking", verifyJWT, async (req, res) => {
     }
   );
 
-  // 3️⃣ 🔗 Mark BOOKING as Completed (YOUR REQUIREMENT)
+  
   await bookings.updateOne(
     { _id: new ObjectId(service.bookingId) },
     {
@@ -466,9 +436,7 @@ app.get("/services/:id/tracking", verifyJWT, async (req, res) => {
 
 
 
-/* ============================
-   UPDATE SERVICE STATUS
-============================ */
+
 app.patch("/services/:id", verifyJWT, async (req, res) => {
   const services = await servicesCol();
   const { status } = req.body;
@@ -497,9 +465,7 @@ if (validTransitions[service.status] !== status) {
   res.send({ success: true });
 });
 
-/* ============================
-   SERVICE CASHOUT
-============================ */
+
 app.post("/services/cashout/:id", verifyJWT, async (req, res) => {
   const services = await servicesCol();
   const payments = await paymentsCol();
@@ -546,7 +512,5 @@ app.post("/services/cashout/:id", verifyJWT, async (req, res) => {
   res.send({ success: true });
 });
 
-/* ============================
-   EXPORT
-============================ */
+
 module.exports = app;
