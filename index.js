@@ -30,7 +30,9 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "https://styledecor-client.firebaseapp.com",
+      "https://styledecor-27d33.web.app",
+      "https://styledecor-27d33.firebaseapp.com",
+     
       "https://style-decor-sever.vercel.app",
     ],
     credentials: true,
